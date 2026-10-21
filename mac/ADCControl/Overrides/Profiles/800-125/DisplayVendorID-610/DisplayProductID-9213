@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist SYSTEM "file://localhost/System/Library/DTDs/PropertyList.dtd">
+<plist version="0.9">
+<dict>
+	<key>DisplayProductID</key>
+	<integer>37395</integer>
+	<key>DisplayProductName</key>
+	<string>Apple Studio Display</string>
+	<key>DisplayVendorID</key>
+	<integer>1552</integer>
+	<key>IOGFlags</key>
+	<integer>196608</integer>
+	<key>IODisplayEDID</key>
+	<data>
+	AP///////wAGEBOSiWQAAgAKAQEIIRiqCGepoFZHmSYRSEwAAQEBAQEBAQEBAQEBAQEBAQEB9yAgADFYKiAQWBMAOOoQAAAe60FAAGKwKkAYuBMAOOoQAAAeAAAA/QA8tE5SEQAKICAgICAgAAAA/ABTdHVkaW9EaXNwbGF5APg=
+	</data>
+	<key>dmdg</key>
+	<data>
+	AAAAAA==
+	</data>
+	<key>dspc</key>
+	<array>
+		<data>
+		9yAgADFYKiAQWBMAOOoQAAAe
+		</data>
+		<data>
+		kBqA0CDgKhAISBMAOOoQAAAe
+		</data>
+		<data>
+		MCoASEEAKjAQcBMAOOoQAAAe
+		</data>
+		<data>
+		LyJACDFwKiAQYBMAOOoQAAAe
+		</data>
+		<data>
+		iSsgUEEYKjAQgBMAOOoQAAAe
+		</data>
+	</array>
+	<key>edid-patches</key>
+	<array>
+		<dict>
+			<key>offset</key>
+			<integer>54</integer>
+			<key>data</key>
+			<data>
+			9yAgADFYKiAQWBMAOOoQAAAe
+			</data>
+		</dict>
+		<dict>
+			<key>offset</key>
+			<integer>72</integer>
+			<key>data</key>
+			<data>
+			60FAAGKwKkAYuBMAOOoQAAAe
+			</data>
+		</dict>
+		<dict>
+			<key>offset</key>
+			<integer>127</integer>
+			<key>data</key>
+			<data>
+			+A==
+			</data>
+		</dict>
+	</array>
+	<key>sync</key>
+	<integer>16843009</integer>
+	<key>tinf</key>
+	<dict>
+		<key>262</key>
+		<data>
+		AAAAAAAAAAAAAAD/AAAAAA==
+		</data>
+	</dict>
+</dict>
+</plist>

@@ -111,6 +111,10 @@ The DVI port is occupied by the I2C wires, so video goes through the VGA port on
 - **pi-adc-gui.py** — GTK3 GUI for geometry, degauss, and power control
 - **crt_backend.py** — shared Python backend for all monitor communication
 
+## macOS Apple Silicon version
+
+A native SwiftUI/IOHID implementation for M1/M-series Macs lives in `mac/ADCControl`. It provides the `adcctl` diagnostic CLI, a clickable SwiftUI utility app, direct HID geometry/degauss/save control, CoreGraphics resolution switching with OEM recommendation labels, and m1ddc-style DDC power writes.
+
 ## Credits
 
 - [Jason "Does It All" ADC adapter](https://jasondoesitall.com) — makes the whole thing possible
