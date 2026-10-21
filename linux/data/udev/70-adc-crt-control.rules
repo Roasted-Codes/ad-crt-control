@@ -1,0 +1,25 @@
+# adc-crt-control: let the logged-in desktop user talk to the Apple Studio Display 17" CRT
+# without sudo.
+#
+# TAG+="uaccess" makes systemd-logind give the user of the active local session an ACL on the
+# device node (SSH sessions do not get it). The tag is acted on by 73-seat-late.rules, so this file
+# MUST sort before 73-seat-late.rules; "70-" does.
+
+# USB HID of the Jason ADC adapter (05ac:9213): hidraw carries the feature reports (controls and
+# power state), hiddev carries the front-panel button events.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="9213", TAG+="uaccess"
+SUBSYSTEM=="usbmisc", KERNEL=="hiddev*", ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="9213", TAG+="uaccess"
+
+# DDC/CI on a desktop: the I2C buses that belong to a graphics card (the display connectors' DDC
+# lines and DisplayPort AUX channels). These two lines follow the approach of ddcutil's
+# data/usr/lib/udev/rules.d/60-ddcutil-i2c.rules (https://github.com/rockowitz/ddcutil, Sanford
+# Rockowitz): match /dev/i2c-N whose parent PCI device has display-controller class
+# 0x030000 (VGA compatible) or 0x038000 (other display controller). Like ddcutil's rule, this
+# covers every bus of the graphics card, not only the one the CRT is on; motherboard SMBus
+# adapters (RAM SPD EEPROMs) are not display controllers and are not matched.
+SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", ATTRS{class}=="0x030000", TAG+="uaccess"
+SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", ATTRS{class}=="0x038000", TAG+="uaccess"
+
+# The Raspberry Pi GPIO bus (/dev/i2c-1) has no PCI parent, so the lines above do not match it.
+# Raspberry Pi OS already gives it to group "i2c"; `adc-crt doctor` says when to run
+# `sudo usermod -aG i2c $USER`.

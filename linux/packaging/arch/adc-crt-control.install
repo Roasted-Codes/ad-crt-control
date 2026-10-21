@@ -1,0 +1,38 @@
+# pacman install scriptlet for adc-crt-control
+
+_adc_crt_reload() {
+  # Apply the uaccess rule to devices already present, so no replug is needed.
+  udevadm control --reload-rules 2>/dev/null || true
+  udevadm trigger --action=change --subsystem-match=hidraw \
+    --subsystem-match=usbmisc --subsystem-match=i2c-dev 2>/dev/null || true
+  systemctl daemon-reload 2>/dev/null || true
+}
+
+post_install() {
+  _adc_crt_reload
+  cat <<'EOF'
+==> adc-crt-control next steps:
+  1. Load the I2C driver now (/usr/lib/modules-load.d loads it at every boot after this):
+       sudo modprobe i2c-dev
+     Or just reboot.
+  2. Log out and back in. Your session then gets access to the monitor's USB HID and the
+     graphics card's I2C buses, and starts the front-panel button listener.
+  3. Check everything:  adc-crt doctor
+  Optional: power the monitor on at every boot:
+       sudo systemctl enable adc-crt-poweron.service
+EOF
+}
+
+post_upgrade() {
+  _adc_crt_reload
+}
+
+pre_remove() {
+  # Remove the enable symlink while the unit file still exists, so none is left dangling.
+  systemctl disable adc-crt-poweron.service 2>/dev/null || true
+}
+
+post_remove() {
+  udevadm control --reload-rules 2>/dev/null || true
+  systemctl daemon-reload 2>/dev/null || true
+}

@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=CRT Buttons
-Comment=Button listener for Apple Studio Display 17"
-Exec=sudo /usr/bin/python3 /usr/lib/crt-control/crt-buttons
-Icon=video-display
-Terminal=false
-X-GNOME-Autostart-enabled=true

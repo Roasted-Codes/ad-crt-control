@@ -1,0 +1,39 @@
+#!/bin/sh
+# prerm for adc-crt-control
+set -e
+
+LIBDIR=/usr/lib/adc-crt-control
+UNIT=adc-crt-poweron.service
+STATE_DIR=/var/lib/adc-crt-control
+REENABLE_MARK=$STATE_DIR/poweron-was-enabled
+
+case "$1" in
+    remove)
+        # Only on removal: an upgrade keeps the administrator's enable/disable choice. If the
+        # service is enabled, leave a mark, so a later reinstall (before purge) enables it again.
+        if command -v systemctl >/dev/null 2>&1; then
+            if systemctl is-enabled --quiet "$UNIT" 2>/dev/null; then
+                mkdir -p "$STATE_DIR" && touch "$REENABLE_MARK" || true
+            fi
+            if [ -d /run/systemd/system ]; then
+                systemctl disable --now "$UNIT" || true
+            else
+                systemctl disable "$UNIT" || true
+            fi
+        fi
+        ;;
+
+    upgrade|deconfigure|failed-upgrade)
+        ;;
+
+    *)
+        echo "prerm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+# The byte-code that postinst (or a root run) wrote is not part of the package. Remove it, or dpkg
+# cannot remove the directory. postinst compiles it again after an upgrade.
+rm -rf "$LIBDIR/adc_crt/__pycache__"
+
+exit 0

@@ -1,0 +1,24 @@
+Package: adc-crt-control
+Version: 3.0.0
+Architecture: all
+Maintainer: Roasted-Codes <Roasted-Codes@users.noreply.github.com>
+Depends: python3 (>= 3.9), python3-gi, gir1.2-gtk-3.0
+Recommends: i2c-tools
+Conflicts: pi-adc-control
+Replaces: pi-adc-control
+Section: misc
+Priority: optional
+Homepage: https://github.com/Roasted-Codes/ad-crt-control
+Description: control an Apple Studio Display 17" CRT through an ADC adapter
+ Power, geometry calibration, degauss and save-to-NVRAM for the Apple Studio
+ Display 17" CRT (M7768) connected through the Jason "Does It All" ADC
+ adapter. Monitor state and geometry go over USB HID. Power is set over
+ DDC/CI, either on the graphics card's display connector or, on a Raspberry
+ Pi, on GPIO I2C bus 1 wired to the adapter's DVI port.
+ .
+ Provides the adc-crt command (command line, GTK 3 window, and a listener for
+ the monitor's front-panel button), a udev rule that gives the logged-in user
+ access without sudo, and a boot service that powers the monitor on.
+ .
+ Replaces pi-adc-control 2.x and removes the empty labwc keybinding it left
+ behind in /etc/xdg/labwc/rc.xml.

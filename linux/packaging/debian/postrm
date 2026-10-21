@@ -1,0 +1,28 @@
+#!/bin/sh
+# postrm for adc-crt-control
+set -e
+
+case "$1" in
+    remove|purge)
+        # The unit file and the udev rule are gone now; make systemd and udev forget them.
+        if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+            systemctl daemon-reload || true
+        fi
+        if command -v udevadm >/dev/null 2>&1; then
+            udevadm control --reload-rules || true
+        fi
+        if [ "$1" = purge ]; then
+            rm -rf /var/lib/adc-crt-control
+        fi
+        ;;
+
+    upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+
+    *)
+        echo "postrm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

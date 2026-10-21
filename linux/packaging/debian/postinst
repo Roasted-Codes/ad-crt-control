@@ -1,0 +1,80 @@
+#!/bin/sh
+# postinst for adc-crt-control
+set -e
+
+LIBDIR=/usr/lib/adc-crt-control
+LABWC_RC=/etc/xdg/labwc/rc.xml
+UNIT=adc-crt-poweron.service
+STATE_DIR=/var/lib/adc-crt-control
+# Written by prerm on removal when the service was enabled (see prerm).
+REENABLE_MARK=$STATE_DIR/poweron-was-enabled
+
+case "$1" in
+    configure)
+        # Every step here can fail harmlessly in a chroot or container (no udevd, no module
+        # loading, no running systemd), so none of them may abort the install.
+
+        # Load the new uaccess rule first, so the /dev/i2c-N nodes that i2c-dev creates are
+        # covered by it. Then re-apply the rules to devices that are already present, so the
+        # logged-in user gets access without replugging the monitor.
+        if command -v udevadm >/dev/null 2>&1; then
+            udevadm control --reload-rules || true
+        fi
+        modprobe i2c-dev 2>/dev/null || true
+        if command -v udevadm >/dev/null 2>&1; then
+            udevadm trigger --action=change --subsystem-match=hidraw \
+                --subsystem-match=usbmisc --subsystem-match=i2c-dev || true
+        fi
+
+        if command -v systemctl >/dev/null 2>&1; then
+            if [ -d /run/systemd/system ]; then
+                systemctl daemon-reload || true
+            fi
+            # Enable the boot service on a first install ($2 is empty, which includes replacing
+            # pi-adc-control), and on a reinstall when it was enabled before removal. On an upgrade,
+            # leave the administrator's enable/disable choice alone. `enable` works offline too (it
+            # only creates the WantedBy symlink). The service is not started now; it runs at the
+            # next boot.
+            if [ -z "$2" ] || [ -e "$REENABLE_MARK" ]; then
+                systemctl enable "$UNIT" || true
+            fi
+        fi
+        rm -f "$REENABLE_MARK"
+        rmdir "$STATE_DIR" 2>/dev/null || true
+
+        # Byte-compile the modules. The desktop user cannot write here, so without this every
+        # `adc-crt` run (e.g. a keyboard shortcut on a Pi 2B) would recompile them. prerm deletes
+        # the cache again.
+        python3 -m compileall -q "$LIBDIR/adc_crt" >/dev/null 2>&1 || true
+
+        # pi-adc-control 2.x left an empty <keybind> block in labwc's system rc.xml. Remove that
+        # exact block only, keeping a backup. Never fail the install over this.
+        if [ -x "$LIBDIR/cleanup-old-labwc-keybind" ]; then
+            "$LIBDIR/cleanup-old-labwc-keybind" "$LABWC_RC" \
+                || echo "adc-crt-control: could not clean up $LABWC_RC (see above); left it unchanged" >&2
+        fi
+
+        cat <<'EOF'
+
+adc-crt-control is installed. Next steps:
+  1. Log out and back in (or reboot). Your desktop session then gets access to the monitor
+     and starts the front-panel button listener.
+  2. Raspberry Pi: enable I2C with `sudo raspi-config nonint do_i2c 0` and join the i2c
+     group with `sudo usermod -aG i2c $USER` (then log out and in again).
+  3. Run `adc-crt doctor`. It checks everything and prints a fix for anything missing.
+  4. labwc: `adc-crt keybinding labwc --install` binds Ctrl+Alt+P to power toggle.
+The monitor is powered on at boot by adc-crt-poweron.service.
+
+EOF
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ADC CRT Control
+GenericName=CRT Monitor Control
+Comment=Geometry, degauss and power control for the Apple Studio Display 17" CRT
+Exec=adc-crt gui
+TryExec=adc-crt
+Icon=video-display
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=monitor;display;CRT;geometry;degauss;DDC;Apple;ADC;

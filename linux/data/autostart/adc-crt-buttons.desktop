@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ADC CRT Buttons
+Comment=Opens or closes ADC CRT Control when the monitor's front-panel brightness button is pressed
+Exec=adc-crt buttons
+TryExec=adc-crt
+Icon=video-display
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

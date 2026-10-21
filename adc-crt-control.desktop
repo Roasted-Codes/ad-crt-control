@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=ADC CRT Control
-Comment=Geometry and power control for Apple Studio Display 17"
-Exec=sudo -E python3 /usr/lib/crt-control/pi-adc-gui.py
-Icon=video-display
-Terminal=false
-Categories=Settings;HardwareSettings;

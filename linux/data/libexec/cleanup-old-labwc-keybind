@@ -1,0 +1,142 @@
+#!/usr/bin/python3
+"""Remove the empty labwc keybind block that pi-adc-control 2.x left behind in rc.xml.
+
+Usage: cleanup-old-labwc-keybind [RC_XML]        (default: /etc/xdg/labwc/rc.xml)
+
+pi-adc-control 2.1's postinst ran this (GNU sed turns each \\n into a newline):
+
+    sed -i 's|</openbox_config>|  <keyboard>\\n    <keybind key="C-A-p">\\n      <action name="Execute"><command>sudo /usr/bin/crt-toggle</command></action>\\n    </keybind>\\n  </keyboard>\\n</openbox_config>|' /etc/xdg/labwc/rc.xml
+
+and its prerm later ran `sed -i '/crt-toggle/d'`. That deletes only the <action> line, so
+this is left directly in front of </openbox_config>:
+
+      <keyboard>
+        <keybind key="C-A-p">
+        </keybind>
+      </keyboard>
+
+pi-adc-control 2.0 did the same with key="C-A-F12". When rc.xml did not exist, both versions
+copied their 99-crt-control.xml template there instead. There the command sits on its own line
+inside a multi-line <action>, so the same prerm leaves an empty <action name="Execute"> as well.
+All four variants come from running the old sed commands, and each install/remove cycle can
+stack one more copy, so every copy is removed.
+
+Only those exact bytes, immediately followed by </openbox_config>, are removed. That is the
+exact inverse of the old sed, so the file goes back to its bytes from before pi-adc-control was
+installed. Anything else, such as a block someone edited, different indentation or a rewritten
+file, is left alone. If there is something to remove, the original is first copied to
+RC_XML.adc-crt-control.bak. The new contents then replace the file atomically, with the same
+mode and owner. A symlinked rc.xml stays a symlink, and the file it points to is edited.
+
+Exit status: 0 when cleaned, nothing to do, or the file does not exist; 1 on an I/O error;
+2 on bad usage.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+from typing import List, Optional, Tuple
+
+PROG = "cleanup-old-labwc-keybind"
+DEFAULT_PATH = "/etc/xdg/labwc/rc.xml"
+BACKUP_SUFFIX = ".adc-crt-control.bak"
+CLOSING_TAG = b"</openbox_config>"
+
+
+def _sed_leftover(key: str) -> bytes:
+    # pi-adc-control 2.x postinst `sed` insertion, minus the line `sed '/crt-toggle/d'` deleted.
+    return ('  <keyboard>\n    <keybind key="%s">\n    </keybind>\n  </keyboard>\n' % key).encode()
+
+
+def _template_leftover(key: str) -> bytes:
+    # pi-adc-control 2.x 99-crt-control.xml (copied when rc.xml was missing), minus the same line.
+    return ('  <keyboard>\n    <keybind key="%s">\n      <action name="Execute">\n'
+            '      </action>\n    </keybind>\n  </keyboard>\n' % key).encode()
+
+
+LEFTOVERS = (
+    _sed_leftover("C-A-p"),         # 2.1, rc.xml existed
+    _sed_leftover("C-A-F12"),       # 2.0, rc.xml existed
+    _template_leftover("C-A-p"),    # 2.1, rc.xml was created from the template
+    _template_leftover("C-A-F12"),  # 2.0, rc.xml was created from the template
+)
+USAGE = f"usage: {PROG} [RC_XML]   (default: {DEFAULT_PATH})"
+
+
+def strip_leftovers(data: bytes) -> Tuple[bytes, int]:
+    """Return (data without the leftover blocks, number of blocks removed)."""
+    removed = 0
+    changed = True
+    while changed:  # stacked copies: removing the last one exposes the one before it
+        changed = False
+        for block in LEFTOVERS:
+            needle = block + CLOSING_TAG
+            count = data.count(needle)
+            if count:
+                data = data.replace(needle, CLOSING_TAG)
+                removed += count
+                changed = True
+    return data, removed
+
+
+def _write_atomic(path: str, data: bytes, like: os.stat_result) -> None:
+    directory = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(path) + ".", dir=directory)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fchmod(handle.fileno(), like.st_mode & 0o7777)
+            try:
+                os.fchown(handle.fileno(), like.st_uid, like.st_gid)
+            except PermissionError:  # not root: the file stays ours, which it already was
+                pass
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def clean(path: str) -> int:
+    try:
+        with open(path, "rb") as handle:
+            original = handle.read()
+    except FileNotFoundError:
+        return 0
+    cleaned, removed = strip_leftovers(original)
+    if not removed:
+        return 0
+    target = os.path.realpath(path)
+    info = os.stat(target)
+    backup = path + BACKUP_SUFFIX
+    _write_atomic(backup, original, info)
+    _write_atomic(target, cleaned, info)
+    blocks = "block" if removed == 1 else f"{removed} blocks"
+    print(f"{path}: removed the empty keybind {blocks} left by pi-adc-control 2.x (backup: {backup})")
+    return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args and args[0] in ("-h", "--help"):
+        print(USAGE)
+        return 0
+    if len(args) > 1 or (args and args[0].startswith("-")):
+        print(USAGE, file=sys.stderr)
+        return 2
+    path = args[0] if args else DEFAULT_PATH
+    try:
+        return clean(path)
+    except OSError as exc:
+        print(f"{PROG}: {path}: {exc.strerror or exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

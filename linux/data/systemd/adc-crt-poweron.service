@@ -1,0 +1,19 @@
+[Unit]
+Description=Power on the Apple Studio Display 17" CRT at boot (adc-crt-control)
+Documentation=https://github.com/Roasted-Codes/ad-crt-control
+# i2c-dev must be loaded (modules-load.d) and udev must be running so /dev/i2c-N and the
+# hidraw node can appear. `adc-crt poweron` itself waits up to 30 s for the monitor's USB HID
+# interface and a DDC bus.
+After=systemd-modules-load.service systemd-udevd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/adc-crt poweron --wait 30
+# Runs as root: do not drop __pycache__ directories into /usr/lib/adc-crt-control.
+Environment=PYTHONDONTWRITEBYTECODE=1
+# A oneshot's start timeout is unlimited by default. Cap it so a wedged I2C or USB transfer
+# cannot hold up boot forever (the command gives up on its own after 30 s).
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,34 @@
+# Maintainer: Roasted-Codes <Roasted-Codes@users.noreply.github.com>
+#
+# Builds from the checked-out repository; nothing is downloaded. Run `makepkg -si` from this
+# directory (linux/packaging/arch/). makepkg sets $startdir to the directory it runs in, which
+# is this one, so the linux/ directory is "$startdir/../.." and the repository root, which holds
+# LICENSE, is "$startdir/../../..".
+
+pkgname=adc-crt-control
+pkgver=3.0.0
+pkgrel=1
+pkgdesc='Control an Apple Studio Display 17" CRT through an ADC adapter (USB HID + DDC/CI)'
+arch=('any')
+url='https://github.com/Roasted-Codes/ad-crt-control'
+license=('MIT')
+depends=('python' 'python-gobject' 'gtk3')
+optdepends=('i2c-tools: manual I2C debugging (i2cdetect, i2ctransfer)')
+backup=('etc/xdg/autostart/adc-crt-buttons.desktop')
+install=adc-crt-control.install
+
+package() {
+  local linuxdir="$startdir/../.."
+  if [[ ! -f "$linuxdir/Makefile" || ! -f "$linuxdir/adc_crt/__init__.py" ]]; then
+    echo "error: $linuxdir is not the repository's linux/ directory; run makepkg from linux/packaging/arch/" >&2
+    return 1
+  fi
+
+  make -C "$linuxdir" install DESTDIR="$pkgdir" PREFIX=/usr
+
+  # Ship byte-code (Arch convention), so runs as root never write __pycache__ files that pacman
+  # does not own.
+  python -m compileall -q -s "$pkgdir" -p / "$pkgdir/usr/lib/$pkgname/adc_crt"
+
+  install -Dm644 "$linuxdir/../LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
