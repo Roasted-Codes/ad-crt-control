@@ -1,3 +1,16 @@
+// Apple Silicon DDC/CI power writes for the Studio Display 17" CRT.
+//
+// The IOAVService lookup and write path in this file is adapted from m1ddc
+// (https://github.com/waydabber/m1ddc), Copyright (c) 2021 waydabber, MIT License:
+// - the IOAVServiceCreate, IOAVServiceCreateWithService, IOAVServiceReadI2C,
+//   IOAVServiceWriteI2C and CoreDisplay_DisplayCreateInfoDictionary declarations;
+// - display enumeration (UUID, IODisplayLocation, ProductAttributes);
+// - finding the display's external DCPAVServiceProxy in the IORegistry
+//   (avService(forAdapterPath:));
+// - the Set VCP packet and checksum (DDCPacket.setVCP) and the setPower write loop:
+//   two IOAVServiceWriteI2C calls to chip 0x37 / data address 0x51, each after a 10 ms wait.
+// See CREDITS.md at the repository root for the full MIT notice.
+
 import CoreGraphics
 import Foundation
 import IOKit
