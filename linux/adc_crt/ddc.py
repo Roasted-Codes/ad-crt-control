@@ -98,6 +98,7 @@ class DrmConnector:
     name: str             # "card0-DP-1"
     bus: Optional[int]    # N from the connector's ddc -> i2c-N symlink, if any
     edid: bytes           # sysfs EDID ("" when nothing is connected)
+    aux_bus: Optional[int] = None  # the connector's own DP-AUX child adapter, when it differs from bus
 
     @property
     def is_studio_display(self) -> bool:
@@ -246,11 +247,16 @@ def iter_drm_connectors(sysfs_root: str = "/sys") -> List[DrmConnector]:
     connectors = []
     for name in sorted((n for n in names if _CONNECTOR_RE.fullmatch(n)), key=_natural_key):
         entry = os.path.join(drm_dir, name)
+        aux = _child_i2c_bus(entry)
+        if os.path.lexists(os.path.join(entry, "ddc")):
+            bus = _ddc_link_bus(os.path.join(entry, "ddc"))
+        else:
+            bus, aux = aux, None
         connectors.append(DrmConnector(
             name=name,
-            bus=_ddc_link_bus(os.path.join(entry, "ddc")) if os.path.lexists(os.path.join(entry, "ddc"))
-            else _child_i2c_bus(entry),
+            bus=bus,
             edid=_read_bytes(os.path.join(entry, "edid")) or b"",
+            aux_bus=aux if aux != bus else None,
         ))
     return connectors
 
@@ -290,11 +296,18 @@ def discover_buses(config_bus: Optional[int] = None, sysfs_root: str = "/sys", d
         candidates.append(DdcBus(RASPBERRY_PI_BUS, SOURCE_RASPBERRY_PI, True))
 
     for connector in iter_drm_connectors(sysfs_root):
-        if connector.bus is None or not connector.is_studio_display:
+        if not connector.is_studio_display:
             continue
-        if any(candidate.number == connector.bus for candidate in candidates):
-            continue
-        candidates.append(DdcBus(connector.bus, f"drm:{connector.name}", True))
+        # A DisplayPort connector can have two buses: the ddc symlink (on amdgpu "AMDGPU DM i2c
+        # hw bus", plain I2C on the DP pins, which only a passive DP++ dongle answers) and its own
+        # AUX child adapter, which is how the kernel itself reads EDID through an active
+        # DP-to-VGA converter. A CRT always needs an active converter, so the AUX bus goes first.
+        # Both belong to the connector whose EDID is the Studio Display's, so the safety rule holds.
+        options = [(connector.aux_bus, f"drm:{connector.name}:aux"), (connector.bus, f"drm:{connector.name}")]
+        for number, source in options:
+            if number is None or any(candidate.number == number for candidate in candidates):
+                continue
+            candidates.append(DdcBus(number, source, True))
 
     if not candidates and pi_bus_present:
         candidates.append(DdcBus(RASPBERRY_PI_BUS, SOURCE_RASPBERRY_PI, False))

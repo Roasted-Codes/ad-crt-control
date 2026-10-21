@@ -44,6 +44,8 @@ _GONE_ERRNOS = frozenset({_errno.ENODEV, _errno.ENOENT, _errno.ENXIO, _errno.EBA
 # errno values meaning "the device is there but refused or did not answer this report".
 _REJECTED_ERRNOS = frozenset({_errno.EPIPE, _errno.EINVAL, _errno.EIO, _errno.ETIMEDOUT, _errno.EPROTO})
 _PERMISSION_ERRNOS = frozenset({_errno.EACCES, _errno.EPERM})
+# The DDC write reached the bus but nothing acknowledged at 0x37 (wrong bus for this cable path).
+_NO_ACK_ERRNOS = frozenset({_errno.ENXIO, _errno.EREMOTEIO, _errno.EIO, _errno.ETIMEDOUT})
 
 _UDEV_FIX = (
     "Install the udev rule 70-adc-crt-control.rules (shipped with adc-crt-control), run "
@@ -218,6 +220,7 @@ class Monitor:
         self._config: Any = _UNSET
         self._device: Any = None
 
+        self._bus_candidates: List[Any] = []
         self._hidraw_path: Optional[str] = hidraw_path or None
         self._hidraw_auto = False
         self.hidraw_source: Optional[str] = "argument" if self._hidraw_path else None
@@ -290,6 +293,7 @@ class Monitor:
         bus = pick_bus(buses)
         if bus is None:
             raise MonitorError(_with_hint(_NO_BUS_MESSAGE))
+        self._bus_candidates = [b for b in buses if b is not bus]
         self._i2c_bus, self._bus_auto, self.ddc_bus_info = int(bus.number), True, bus
         self.i2c_bus_source = f"auto ({getattr(bus, 'source', 'discovery')})"
         return self._i2c_bus
@@ -429,9 +433,27 @@ class Monitor:
         try:
             self._ddc_set_power(bus, bool(on))
         except OSError as exc:
-            if self._bus_auto and getattr(exc, "errno", None) in (_errno.ENOENT, _errno.ENODEV):
+            code = getattr(exc, "errno", None)
+            if self._bus_auto and code in _NO_ACK_ERRNOS and self._try_other_buses_locked(bool(on)):
+                return
+            if self._bus_auto and code in (_errno.ENOENT, _errno.ENODEV):
                 self._i2c_bus, self._bus_auto, self.ddc_bus_info, self.i2c_bus_source = None, False, None, None
             raise _ddc_failure(bool(on), bus, exc) from exc
+
+    def _try_other_buses_locked(self, on: bool) -> bool:
+        """The auto-picked bus didn't answer at 0x37. Try the other discovered candidates (for
+        example a DisplayPort connector's plain DDC bus after its AUX bus) and stick with the first
+        one that works. Only buses from discovery are tried, so the bus safety rule still holds."""
+        for candidate in list(self._bus_candidates):
+            try:
+                self._ddc_set_power(int(candidate.number), on)
+            except OSError:
+                continue
+            self._bus_candidates = [b for b in self._bus_candidates if b is not candidate]
+            self._i2c_bus, self.ddc_bus_info = int(candidate.number), candidate
+            self.i2c_bus_source = f"auto ({getattr(candidate, 'source', 'discovery')})"
+            return True
+        return False
 
     def set_power(self, on: bool) -> None:
         """Send DDC/CI power on/off (HID cannot set power on this monitor)."""

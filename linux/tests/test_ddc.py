@@ -167,9 +167,12 @@ class DiscoverBusesTest(unittest.TestCase):
 
     def test_drm_dp_aux_child_adapter_when_no_ddc_symlink(self):
         self.add_connector("card1-DP-3", aux_child=9, edid=STUDIO_EDID)
-        self.add_connector("card1-DP-4", bus=4, aux_child=12, edid=STUDIO_EDID)  # ddc symlink wins
+        # Both a ddc symlink and an AUX child: AUX first (active DP-to-VGA), then the ddc bus.
+        self.add_connector("card1-DP-4", bus=4, aux_child=12, edid=STUDIO_EDID)
         fake = FakeI2C(self.dev).install(self)
-        self.assertEqual(self.discover(), [DdcBus(9, "drm:card1-DP-3", True), DdcBus(4, "drm:card1-DP-4", True)])
+        self.assertEqual(self.discover(), [DdcBus(9, "drm:card1-DP-3", True),
+                                           DdcBus(12, "drm:card1-DP-4:aux", True),
+                                           DdcBus(4, "drm:card1-DP-4", True)])
         self.assertEqual(fake.opened, [])
 
     def test_bus_path(self):

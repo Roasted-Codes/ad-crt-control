@@ -425,3 +425,58 @@ class DeviceLifecycleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DdcBusFallbackTest(unittest.TestCase):
+    """An auto-discovered bus that doesn't ACK falls through to the next discovered candidate."""
+
+    def make(self, failing):
+        import errno
+        from collections import namedtuple
+        Bus = namedtuple("Bus", "number source edid_verified")
+        calls = []
+
+        def set_power(bus, on):
+            calls.append((bus, on))
+            if bus in failing:
+                raise OSError(failing[bus], "no ack")
+
+        mon = Monitor(_discover_buses=lambda: [Bus(12, "drm:card0-DP-1:aux", True), Bus(4, "drm:card0-DP-1", True)],
+                      _ddc_set_power=set_power, _load_config=lambda: None)
+        return mon, calls, errno
+
+    def test_falls_back_and_remembers(self):
+        import errno
+        mon, calls, _ = self.make({12: errno.EREMOTEIO})
+        mon.set_power(True)
+        self.assertEqual(calls, [(12, True), (4, True)])
+        mon.set_power(False)
+        self.assertEqual(calls[-1], (4, False))
+        self.assertEqual(mon.i2c_bus, 4)
+
+    def test_all_fail_raises(self):
+        import errno
+        mon, calls, _ = self.make({12: errno.ENXIO, 4: errno.ENXIO})
+        with self.assertRaises(MonitorError):
+            mon.set_power(True)
+        self.assertEqual([b for b, _ in calls], [12, 4])
+
+    def test_permission_error_does_not_fall_back(self):
+        import errno
+        mon, calls, _ = self.make({12: errno.EACCES})
+        with self.assertRaises(MonitorError):
+            mon.set_power(True)
+        self.assertEqual(calls, [(12, True)])
+
+    def test_explicit_bus_never_falls_back(self):
+        import errno
+        calls = []
+
+        def set_power(bus, on):
+            calls.append(bus)
+            raise OSError(errno.EREMOTEIO, "no ack")
+
+        mon = Monitor(i2c_bus=12, _ddc_set_power=set_power, _load_config=lambda: None)
+        with self.assertRaises(MonitorError):
+            mon.set_power(True)
+        self.assertEqual(calls, [12])
