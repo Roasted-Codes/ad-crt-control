@@ -1,123 +1,83 @@
-# Pi Studio Display
+# ADC CRT Control
 
-Control an Apple Studio Display 17" CRT (M7768) from a Raspberry Pi using a Jason "Does It All" ADC adapter. Wire 4 jumper cables from the Pi's GPIO to the adapter's DVI port, install the .deb package, and the monitor powers on at boot with full geometry calibration from the desktop.
+Power, geometry and calibration control for the Apple Studio Display 17" CRT (ADC), on modern hosts.
 
-![Apple Studio Display 17" CRT running off a Raspberry Pi via the Jason ADC adapter](images/setup-overview.jpg)
+Without an old Mac that has an ADC port, the 17" CRT Studio Display has no power control at all: an adapter gets a picture onto it, but nothing can switch it on or off. These tools fix that. They also give you the monitor's geometry and calibration controls (contrast, size, phase, pincushion, keystone, rotation, convergence, degauss, save to NVRAM) from Linux, including a Raspberry Pi, and from an Apple Silicon Mac.
 
-## Quick Start
+Everything goes through Jason Olshefsky's ADC adapter board, which this project calls the Jason "Does It All" adapter.
 
-### 1. Wire the Pi to the DVI port on the Jason adapter
+![Apple Studio Display 17" CRT running off a Raspberry Pi via the Jason ADC adapter](docs/images/setup-overview.jpg)
 
-![Jason "Does It All" ADC-to-USB adapter board](images/jason-adapter.jpg)
+## Pick your host
 
-| Pi Pin | Pi Function | DVI Pin | DVI Function |
-|--------|-------------|---------|--------------|
-| Pin 2 | 5V | Pin 14 | +5V Power |
-| Pin 3 | SDA1 | Pin 7 | DDC Data |
-| Pin 5 | SCL1 | Pin 6 | DDC Clock |
-| Pin 9 | GND | Pin 15 | DDC Ground |
+| Host | Folder | What you get |
+|---|---|---|
+| **Linux**: Raspberry Pi (Pi 2B tested, Raspberry Pi OS with labwc) and desktop Linux, including CachyOS/Arch | [`linux/`](linux/) | GTK GUI, the `adc-crt` command-line tool, power-on at boot, and the monitor's front button opens and closes the GUI |
+| **Apple Silicon Mac** (macOS 13+) | [`mac/ADCControl/`](mac/ADCControl/) | SwiftUI app, the `adcctl` diagnostic CLI, m1ddc-style DDC power writes, and resolution switching across Apple's OEM timings |
 
-```
-        DVI-I Female — front face
-        ─────────────────────────────────────────
- Row 1:  1    2    3    4    5   [6]  [7]   8
-                                 SCL  SDA
+### Linux quick start
 
- Row 2:  9   10   11   12   13  [14] [15]  16
-                                 5V   GND
-```
-
-![Jumper wires seated in DVI pins 6, 7, 14, and 15](images/dvi-wiring.jpg)
-
-### 2. Enable I2C on the Pi
+Wire the adapter first (see [docs/hardware.md](docs/hardware.md)). Then:
 
 ```bash
-sudo apt update && sudo apt install -y i2c-tools
-sudo raspi-config nonint do_i2c 0
-echo i2c-dev | sudo tee -a /etc/modules
-sudo reboot
+# Raspberry Pi (Raspberry Pi OS)
+sudo raspi-config nonint do_i2c 0       # enable the GPIO I2C bus
+make -C linux deb && sudo apt install ./linux/dist/adc-crt-control_3.0.0_all.deb
+adc-crt doctor                          # checks every link and prints a fix for anything wrong
 ```
-
-### 3. Build and install usbmonctl
 
 ```bash
-cd usbmonctl
-make
-sudo cp usbmonctl /usr/local/bin/
+# CachyOS / Arch
+cd linux/packaging/arch && makepkg -si  # then follow the next steps it prints
+adc-crt doctor
 ```
 
-### 4. Build and install the control package
+After that, `adc-crt power toggle` switches the monitor, and `adc-crt gui` opens the calibration window. Nothing runs as root except the boot-time power-on service. Installing the 3.0 package on a Pi replaces the old `pi-adc-control` 2.x package. Full install and usage notes are in [linux/README.md](linux/README.md).
+
+### Mac quick start
 
 ```bash
-cd pi-ADC-controller
-make deb
-sudo apt install ./pi-adc-control_2.0_all.deb
+cd mac/ADCControl
+swift run adcctl self-test              # offline check of the protocol constants
+swift run adcctl power read             # 1 = on, 2 = sleep, 4 = off
+make app                                # builds and ad-hoc signs dist/ADC CRT Control.app
+open "dist/ADC CRT Control.app"
 ```
 
-### 5. Reboot
-
-The monitor powers on automatically at boot. Use **Ctrl+Alt+P** to toggle power, or open **Preferences > ADC CRT Control** for geometry adjustments.
-
-## Verify wiring
-
-```bash
-sudo i2cdetect -y 1
-```
-
-You should see `37` (DDC/CI controller) and `50` (EDID EEPROM). If not, check your wiring.
+The app is deliberately unsandboxed and only ad-hoc signed, because direct HID and DDC access require that. Details and the full diagnostic command list are in [mac/ADCControl/README.md](mac/ADCControl/README.md).
 
 ## How it works
 
-The monitor has two communication paths through the Jason adapter, and each one can do something the other can't:
+The monitor offers two ways in, and neither one can do the whole job:
 
-- **USB HID** (via `usbmonctl`) reads the monitor's power state and adjusts settings, but power control is read-only.
-- **DDC/CI over DVI pins** (via `i2ctransfer`) can set power state through the Pi's GPIO I2C bus, but can't read anything back.
+- **USB HID** (`05ac:9213`, through the adapter's USB port) reads the monitor's state and sets every geometry control, but the power state (code `0xD6`) is **read-only** there.
+- **DDC/CI** (I2C address `0x37`, over the display cable's DDC lines) can **set** the power state (VCP `0xD6`: 1 = on, 4 = off), but can't read it back.
 
-The toggle script reads state over USB, then sends the opposite command over I2C.
+So both implementations do the same thing: **read the power state over HID, then write the change over DDC.** Only the DDC transport differs. Linux uses the kernel's `/dev/i2c-N` interface, either on a Pi's GPIO bus or on the graphics card's own connector bus. The Mac uses Apple Silicon's IOAVService. The byte-level protocol and the shared control table are in [docs/protocol.md](docs/protocol.md).
 
-### DDC/CI command bytes
+## Hardware
 
-| Byte | Value (on / off) | Meaning |
-|------|-------------------|---------|
-| 1 | `0x51` | Source address (host) |
-| 2 | `0x84` | Length: `0x80` flag + 4 data bytes |
-| 3 | `0x03` | Opcode: Set VCP Feature |
-| 4 | `0xD6` | VCP code: power state |
-| 5 | `0x00` | Value high byte |
-| 6 | `0x01` / `0x04` | Value low byte (1=on, 4=off) |
-| 7 | `0x6F` / `0x6A` | XOR checksum |
+Adapter, Pi wiring, desktop and Mac cabling, and the model-number question are covered in [docs/hardware.md](docs/hardware.md).
 
-### Manual commands
+![Jason "Does It All" ADC adapter board](docs/images/jason-adapter.jpg)
 
-```bash
-# Power on
-sudo i2ctransfer -y 1 w7@0x37 0x51 0x84 0x03 0xD6 0x00 0x01 0x6F
+## Older Pi-only version
 
-# Power off
-sudo i2ctransfer -y 1 w7@0x37 0x51 0x84 0x03 0xD6 0x00 0x04 0x6A
-
-# Read current state (1=on, 2=sleep, 4=off)
-sudo usbmonctl -g F,0xD6
-```
-
-## Video setup
-
-The DVI port is occupied by the I2C wires, so video goes through the VGA port on the Jason adapter. Use an HDMI-to-VGA adapter from the Pi's HDMI output.
-
-## What's in the package
-
-- **crt-daemon** — powers on the monitor at boot (systemd oneshot service)
-- **crt-toggle** — toggles power from the command line or keyboard shortcut
-- **pi-adc-gui.py** — GTK3 GUI for geometry, degauss, and power control
-- **crt_backend.py** — shared Python backend for all monitor communication
-
-## macOS Apple Silicon version
-
-A native SwiftUI/IOHID implementation for M1/M-series Macs lives in `mac/ADCControl`. It provides the `adcctl` diagnostic CLI, a clickable SwiftUI utility app, direct HID geometry/degauss/save control, CoreGraphics resolution switching with OEM recommendation labels, and m1ddc-style DDC power writes.
+The original Pi-only layout (v2.x: `crt_backend.py`, `usbmonctl`, `i2ctransfer`, a sudoers file) is preserved at git tag `pi-v2.1`.
 
 ## Credits
 
-- [Jason "Does It All" ADC adapter](https://jasondoesitall.com) — makes the whole thing possible
-- [usbmonctl](https://github.com/OndrejZary/usbmonctl) by Ondrej Zary — USB HID monitor control for Linux
-- [monitorcontrol](https://github.com/newAM/monitorcontrol) by newAM — Python DDC/CI library (reference for the I2C protocol)
-- [GUI-for-apple-studio-17-ADC](https://github.com/mega-calibrator/GUI-for-apple-studio-17-ADC) by mega-calibrator — Windows GUI that inspired this project
+This project stands on other people's reverse-engineering. The full list, with what was taken from each, is in [CREDITS.md](CREDITS.md):
+
+- **[GUI-for-apple-studio-17-ADC](https://github.com/mega-calibrator/GUI-for-apple-studio-17-ADC)** by mega-calibrator, with agfa. This Windows GUI is where the project started, and the 11 geometry controls and the degauss, save and refresh-rate codes follow its table.
+- **[usbmonctl](https://github.com/ondrej-zary/usbmonctl)** by Ondrej Zary. Its Apple control table documents `0xD6` as a read-only power state, and that is why power is written over DDC. The v2.x Pi version used it for all HID access.
+- **[monitorcontrol](https://github.com/newAM/monitorcontrol)** by Alex Martens (newAM). This was the reference for the DDC/CI Set VCP packet.
+- **[m1ddc](https://github.com/waydabber/m1ddc)** by waydabber. The Mac's Apple Silicon DDC write path is adapted from it.
+- **[ddcutil](https://github.com/rockowitz/ddcutil)** by Sanford Rockowitz. The Linux udev rule that gives the desktop user access to the graphics card's DDC buses follows its approach.
+- **[Apple Display Connector Adapter Board](https://jasondoesitall.com/adc/)** by Jason Olshefsky. This is open-source hardware, and the whole project is built around it.
+
+## License
+
+MIT; see [LICENSE](LICENSE). The m1ddc-derived code in `mac/ADCControl/Sources/ADCMonitorCore/MacDDCPowerTransport.swift` keeps m1ddc's MIT notice, which is reproduced in [CREDITS.md](CREDITS.md). Two kinds of data here come from Apple: the monitor's EDID and the macOS display-override data that the Mac override profiles start from. Those remain Apple's.
+
+This project is not affiliated with or endorsed by Apple.
